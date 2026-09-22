@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2A2622"/>
+      <stop offset="1" stop-color="#14120F"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#F4A261"/>
+      <stop offset="1" stop-color="#D97757"/>
+    </linearGradient>
+    <linearGradient id="soft" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.55"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.3" cy="0.2" r="0.8">
+      <stop offset="0" stop-color="#D97757" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#D97757" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="220" fill="url(#bg)"/>
+  <rect x="64" y="64" width="896" height="896" rx="220" fill="url(#glow)"/>
+  <rect x="64" y="64" width="896" height="896" rx="220" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="6"/>
+
+  <!-- account dots -->
+  <circle cx="236" cy="372" r="46" fill="url(#accent)"/>
+  <circle cx="236" cy="652" r="46" fill="#FFFFFF" fill-opacity="0.35"/>
+
+  <!-- usage bars -->
+  <rect x="330" y="330" width="470" height="84" rx="42" fill="#FFFFFF" fill-opacity="0.10"/>
+  <rect x="330" y="330" width="330" height="84" rx="42" fill="url(#accent)"/>
+  <rect x="330" y="610" width="470" height="84" rx="42" fill="#FFFFFF" fill-opacity="0.10"/>
+  <rect x="330" y="610" width="160" height="84" rx="42" fill="url(#soft)"/>
+
+  <!-- switch arrows -->
+  <path d="M846 444 L846 552" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="30" stroke-linecap="round"/>
+  <path d="M806 484 L846 444 L886 484" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M806 512 L846 552 L886 512" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

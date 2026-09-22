@@ -1,0 +1,206 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  --color-accent: #d97757;
+  --color-accent-soft: #f4a261;
+  --color-ok: #34d399;
+  --color-warn: #fbbf24;
+  --color-critical: #f87171;
+
+  --radius-xl2: 1.25rem;
+}
+
+/* ---- semantic tokens: dark is the default, light follows the system ---- */
+:root {
+  color-scheme: dark;
+  --surface: 20 19 18;
+  --surface-alpha: 0.72;
+  --panel: 255 255 255;
+  --panel-alpha: 0.055;
+  --panel-hover-alpha: 0.09;
+  --line: 255 255 255;
+  --line-alpha: 0.09;
+  --ink: 245 243 240;
+  --ink-2: 190 186 180;
+  --ink-3: 130 126 120;
+  --track: 255 255 255;
+  --track-alpha: 0.1;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --surface: 248 246 243;
+    --surface-alpha: 0.78;
+    --panel: 20 19 18;
+    --panel-alpha: 0.045;
+    --panel-hover-alpha: 0.08;
+    --line: 20 19 18;
+    --line-alpha: 0.08;
+    --ink: 26 24 22;
+    --ink-2: 90 86 80;
+    --ink-3: 140 134 126;
+    --track: 20 19 18;
+    --track-alpha: 0.08;
+  }
+}
+
+/* Platforms without a native blur behind the window get an opaque surface. */
+html[data-platform="linux"] {
+  --surface-alpha: 1;
+}
+html[data-window="settings"] {
+  --surface-alpha: 1;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  background: transparent;
+}
+html[data-window="settings"],
+html[data-window="settings"] body,
+html[data-window="settings"] #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: rgb(var(--ink));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv11", "ss01", "tnum";
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+html[data-window="settings"] body {
+  overflow: auto;
+  background: rgb(var(--surface));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--line) / 0.18);
+  border-radius: 8px;
+}
+
+/* ---- utilities ---- */
+@utility surface {
+  background: rgb(var(--surface) / var(--surface-alpha));
+}
+@utility panel {
+  background: rgb(var(--panel) / var(--panel-alpha));
+  border: 1px solid rgb(var(--line) / var(--line-alpha));
+}
+@utility panel-hover {
+  background: rgb(var(--panel) / var(--panel-hover-alpha));
+}
+@utility ink {
+  color: rgb(var(--ink));
+}
+@utility ink-2 {
+  color: rgb(var(--ink-2));
+}
+@utility ink-3 {
+  color: rgb(var(--ink-3));
+}
+@utility hairline {
+  border-color: rgb(var(--line) / var(--line-alpha));
+}
+@utility track {
+  background: rgb(var(--track) / var(--track-alpha));
+}
+@utility tnum {
+  font-variant-numeric: tabular-nums;
+}
+@utility focus-ring {
+  outline: none;
+  &:focus-visible {
+    box-shadow: 0 0 0 2px rgb(var(--surface)), 0 0 0 4px var(--color-accent);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--track) / var(--track-alpha)) 0%,
+    rgb(var(--track) / calc(var(--track-alpha) * 2)) 50%,
+    rgb(var(--track) / var(--track-alpha)) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+/* ---- range slider ---- */
+.range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--color-accent) 0%,
+    var(--color-accent) var(--ratio, 0%),
+    rgb(var(--track) / var(--track-alpha)) var(--ratio, 0%),
+    rgb(var(--track) / var(--track-alpha)) 100%
+  );
+  outline: none;
+}
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgb(0 0 0 / 0.12);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.25);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+.range::-webkit-slider-thumb:hover {
+  transform: scale(1.08);
+}
+.range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgb(0 0 0 / 0.12);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.25);
+  cursor: pointer;
+}
+.range:disabled {
+  cursor: not-allowed;
+}
