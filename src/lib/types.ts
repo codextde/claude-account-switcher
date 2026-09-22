@@ -35,6 +35,11 @@ export interface Usage {
   extraUsage: ExtraUsage | null;
 }
 
+/** A per-model weekly window ("Opus", "Sonnet", "Fable", ...), derived by the backend. */
+export interface ModelWindow extends UsageWindow {
+  label: string;
+}
+
 export interface AccountView {
   id: string;
   email: string;
@@ -48,6 +53,7 @@ export interface AccountView {
   hasBackup: boolean;
   needsReauth: boolean;
   usage: Usage | null;
+  modelWindows: ModelWindow[];
   usageError: string | null;
   usageFetchedAt: number | null;
   tokenExpiresAt: number | null;

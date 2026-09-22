@@ -20,11 +20,41 @@
 
 `claude auth login` is destructive: every login wipes the previous account's credentials, and going back means another full browser round-trip. This app keeps a private backup of each account's credentials and swaps them in place, so all your accounts stay one click away.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/popover-dark.png">
+    <img src="docs/screenshots/popover-light.png" width="420" alt="The popover: session, weekly and per-model usage of the active account, then every saved account with its own usage and a one-click switch">
+  </picture>
+</p>
+
+<p align="center">
+  <em>The popover. Live usage for the active account on top, every saved account below. Follows the system light or dark mode.</em>
+</p>
+
+<table align="center">
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/tray-dark.png" width="400" alt="The menu bar item at 20%, 63% and 95%: a small bar that turns amber near the threshold and red above it">
+      <br><em>Menu bar item as usage climbs</em>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/popover-hover-dark.png" width="400" alt="Hovering an account row reveals re-authenticate, remove and switch actions">
+      <br><em>Hover a row to switch, re-login or remove</em>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" colspan="2">
+      <img src="docs/screenshots/settings-dark.png" width="520" alt="Settings window: auto-switch threshold, hysteresis and cooldown, menu bar display options, launch at login, automatic updates and the CLI path">
+      <br><em>Settings: thresholds, menu bar display, updates and the CLI path</em>
+    </td>
+  </tr>
+</table>
+
 ## Features
 
 - **Non-destructive switching.** Each account's OAuth token and identity block are backed up once. Switching writes them back atomically; nothing is ever logged out.
 - **Automatic switching.** When the active account reaches the threshold (default 90% of its 5-hour or 7-day limit), the app moves to the account with the most headroom. Hysteresis and a cooldown prevent ping-pong.
-- **Usage in the menu bar.** The tray icon is a live progress bar of the binding limit. On macOS it also shows the percentage as text. The popover shows session and weekly windows, model windows, and reset countdowns.
+- **Usage in the menu bar.** The tray icon is a live progress bar of the binding limit. On macOS it also shows the percentage as text. The popover shows the session and weekly windows plus every per-model weekly window (Opus, Sonnet, Fable, ...) with reset countdowns, for the active account and for each saved account.
 - **Terminal-free login.** Adding an account runs the official CLI login in the background and captures the result. The account you are already logged in with is adopted automatically on first launch.
 - **Delegated token refresh.** The active account is refreshed through the CLI itself. Other accounts refresh through the OAuth endpoint, touching only the app's own backup.
 - **Cross-platform.** macOS keychain, or `~/.claude/.credentials.json` on Linux and Windows. `CLAUDE_CONFIG_DIR` is honoured.

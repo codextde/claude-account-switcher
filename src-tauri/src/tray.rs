@@ -201,12 +201,17 @@ pub fn update(app: &AppHandle, snap: &Snapshot) {
                 .as_ref()
                 .and_then(|u| u.seven_day.as_ref())
                 .and_then(|w| w.utilization);
-            format!(
-                "{}\n5h: {}  ·  7d: {}",
-                a.account.email,
+            let mut line = format!(
+                "5h: {}  ·  7d: {}",
                 five.map(|v| format!("{v:.0}%")).unwrap_or_else(|| "–".into()),
                 week.map(|v| format!("{v:.0}%")).unwrap_or_else(|| "–".into())
-            )
+            );
+            for m in &a.model_windows {
+                if let Some(v) = m.window.utilization {
+                    line.push_str(&format!("  ·  {}: {v:.0}%", m.label));
+                }
+            }
+            format!("{}\n{line}", a.account.email)
         }
         None => "Claude Account Switcher".to_string(),
     };

@@ -114,6 +114,10 @@ impl Service {
                     has_backup: backup.is_some(),
                     needs_reauth: u.map(|u| u.needs_reauth).unwrap_or(false),
                     usage: u.and_then(|u| u.usage.clone()),
+                    model_windows: u
+                        .and_then(|u| u.usage.as_ref())
+                        .map(|u| u.model_windows())
+                        .unwrap_or_default(),
                     usage_error: u.and_then(|u| u.error.clone()),
                     usage_fetched_at: u.and_then(|u| u.fetched_at),
                     token_expires_at: backup

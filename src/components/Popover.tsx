@@ -17,12 +17,11 @@ import {
 } from "lucide-react";
 import { api, errorMessage, useTick } from "../lib/api";
 import {
-  FIVE_HOURS_MS,
-  SEVEN_DAYS_MS,
   bindingPct,
   countdown,
   elapsedPct,
   initials,
+  limitRows,
   pct,
   planLabel,
   relativeTime,
@@ -30,12 +29,22 @@ import {
   tone,
 } from "../lib/format";
 import type { AccountView, Snapshot } from "../lib/types";
-import type { Tone } from "../lib/format";
+import type { LimitRow, Tone } from "../lib/format";
 import UsageBar from "./UsageBar";
 import { Badge, Button, IconButton, Spinner } from "./ui";
 
 const pillCls =
   "focus-ring ml-0.5 inline-flex h-7 items-center gap-1 rounded-full bg-accent/15 px-2.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/25 disabled:opacity-40";
+
+/**
+ * Margin the identity block of an account row gives up while the hover actions are shown:
+ * the actions' width plus their `right-2` offset, less the block's own `pr-3` padding.
+ * Actions are 28px icon buttons with 2px gaps, plus a ~76px "Switch" / "Log in" pill.
+ */
+const RESERVE_ACTIVE = 60; // key + trash
+const RESERVE_REAUTH = 104; // trash + "Log in"
+const RESERVE_SWITCHABLE = 140; // key + trash + "Switch"
+const RESERVE_CONFIRM = 100; // "Remove" + cancel
 
 const toneText: Record<Tone, string> = {
   ok: "ink",
@@ -335,14 +344,7 @@ function ActiveUsage({
 }) {
   const usage = account.usage;
   const loading = !usage && refreshing;
-  const rows = [
-    { label: "Session", hint: "5-hour window", window: usage?.fiveHour ?? null, span: FIVE_HOURS_MS },
-    { label: "Weekly", hint: "7-day window", window: usage?.sevenDay ?? null, span: SEVEN_DAYS_MS },
-  ];
-  const models = [
-    { label: "Opus", window: usage?.sevenDayOpus ?? null },
-    { label: "Sonnet", window: usage?.sevenDaySonnet ?? null },
-  ].filter((m) => pct(m.window) !== null);
+  const rows = limitRows(usage, account.modelWindows);
 
   return (
     <section className="panel rounded-xl2 px-4 py-3.5">
@@ -376,20 +378,8 @@ function ActiveUsage({
         })}
       </div>
 
-      {(models.length > 0 || account.usageError || account.usageFetchedAt) && (
+      {(account.usageError || account.usageFetchedAt) && (
         <div className="mt-3.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t hairline pt-3">
-          {models.map((m) => {
-            const v = pct(m.window)!;
-            return (
-              <span key={m.label} className="inline-flex items-center gap-1.5 text-[11px] ink-3 tnum">
-                <span
-                  className="inline-block h-1.5 w-1.5 rounded-full"
-                  style={{ background: v >= threshold ? "var(--color-critical)" : v >= threshold - 20 ? "var(--color-warn)" : "var(--color-ok)" }}
-                />
-                {m.label} <span className="font-semibold ink-2">{Math.round(v)}%</span>
-              </span>
-            );
-          })}
           {account.usageError && (
             <span className="inline-flex items-center gap-1 text-[11px] text-warn">
               <AlertTriangle size={11} /> {account.usageError}
@@ -423,7 +413,6 @@ function AccountRow({
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const v = bindingPct(account.usage);
-  const t = tone(v, threshold);
   const switching = busy === `switch:${account.id}`;
   const reauthing = busy === `reauth:${account.id}`;
   const canSwitch = !account.isActive && account.hasBackup && !account.needsReauth && !busy;
@@ -433,6 +422,7 @@ function AccountRow({
   const sevenDay = pct(account.usage?.sevenDay);
   const bindingWindow = v === null ? null : fiveHour !== null && fiveHour >= (sevenDay ?? -1) ? account.usage?.fiveHour : account.usage?.sevenDay;
   const reset = countdown(resetsAtMs(bindingWindow), now);
+  const limits = account.usage ? limitRows(account.usage, account.modelWindows) : null;
 
   const subline: React.ReactNode[] = [];
   if (account.isActive) subline.push(<span key="cur" className="text-accent">Current</span>);
@@ -441,8 +431,14 @@ function AccountRow({
   else if (!account.hasBackup) subline.push(<span key="nb" className="text-warn">No backup</span>);
   else if (!account.isActive && reset && v !== null) subline.push(<span key="reset">resets in {reset}</span>);
 
-  // Width the text column gives up while the hover actions are shown, so they never cover the email.
-  const reserve = confirmRemove ? 28 : account.isActive ? 0 : 72;
+  // Width the identity block gives up while the hover actions are shown, so they never cover the email.
+  const reserve = confirmRemove
+    ? RESERVE_CONFIRM
+    : account.isActive
+      ? RESERVE_ACTIVE
+      : account.needsReauth
+        ? RESERVE_REAUTH
+        : RESERVE_SWITCHABLE;
 
   return (
     <motion.li
@@ -457,49 +453,49 @@ function AccountRow({
           : "hover:bg-[rgb(var(--panel)/var(--panel-alpha))]"
       }`}
     >
+      {/* Not `disabled` when unswitchable: a disabled button swallows the limit tooltips inside it. */}
       <button
         type="button"
-        disabled={!canSwitch}
-        onClick={onSwitch}
-        className="focus-ring flex min-w-0 flex-1 items-center gap-3 rounded-xl py-2 pl-2.5 pr-3 text-left disabled:cursor-default"
+        aria-disabled={!canSwitch}
+        onClick={canSwitch ? onSwitch : undefined}
+        className={`focus-ring flex min-w-0 flex-1 items-center gap-3 rounded-xl py-2 pl-2.5 pr-3 text-left ${
+          canSwitch ? "" : "cursor-default"
+        }`}
         title={canSwitch ? `Switch to ${account.email}` : undefined}
       >
         <Avatar account={account} size={30} />
-        <div
-          className={`min-w-0 flex-1 transition-[margin] duration-150 group-hover:mr-(--reserve) group-focus-within:mr-(--reserve) ${
-            confirmRemove ? "mr-(--reserve)" : ""
-          }`}
-          style={{ "--reserve": `${reserve}px` } as React.CSSProperties}
-        >
-          <div className="truncate text-[13px] font-medium leading-tight">{account.email}</div>
-          <div className="mt-1 truncate text-[11px] leading-tight ink-3">
-            {subline.map((s, i) => (
-              <span key={i}>
-                {i > 0 && <span className="mx-1 opacity-50">·</span>}
-                {s}
-              </span>
-            ))}
+        <div className="min-w-0 flex-1">
+          {/* Identity block: gives up width to the hover actions so they never cover the email */}
+          <div
+            className={`min-w-0 transition-[margin] duration-150 group-hover:mr-(--reserve) group-focus-within:mr-(--reserve) ${
+              confirmRemove ? "mr-(--reserve)" : ""
+            }`}
+            style={{ "--reserve": `${reserve}px` } as React.CSSProperties}
+          >
+            <div className="truncate text-[13px] font-medium leading-tight">{account.email}</div>
+            <div className="mt-1 truncate text-[11px] leading-tight ink-3">
+              {subline.map((s, i) => (
+                <span key={i}>
+                  {i > 0 && <span className="mx-1 opacity-50">·</span>}
+                  {s}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
-
-        {/* Usage meter: fades out when the hover actions take its place */}
-        <div
-          className={`flex w-[68px] shrink-0 flex-col items-end gap-1.5 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0 ${
-            confirmRemove ? "opacity-0" : ""
-          }`}
-        >
-          <span className={`text-[13px] font-semibold leading-none tnum ${toneText[t]}`}>
-            {v === null ? "–" : `${Math.round(v)}%`}
-          </span>
-          <div className="w-12">
-            <UsageBar value={v} tone={t} size="sm" />
-          </div>
+          {/* Every limit: 5h, weekly, then each model window. Wraps when there are many. */}
+          {limits && (
+            <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+              {limits.map((r) => (
+                <MiniLimit key={r.short} row={r} threshold={threshold} now={now} />
+              ))}
+            </div>
+          )}
         </div>
       </button>
 
-      {/* Hover actions, layered over the meter so the row never reflows */}
+      {/* Hover actions, layered over the identity block so the row never reflows */}
       <div
-        className={`absolute inset-y-0 right-2 flex items-center gap-0.5 transition-opacity duration-150 ${
+        className={`absolute top-2 right-2 flex h-[30px] items-center gap-0.5 transition-opacity duration-150 ${
           confirmRemove ? "opacity-100" : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
         }`}
       >
@@ -546,6 +542,25 @@ function AccountRow({
         )}
       </div>
     </motion.li>
+  );
+}
+
+/** One compact limit for an account row: label, tiny bar, percent. Reset time on hover. */
+function MiniLimit({ row, threshold, now }: { row: LimitRow; threshold: number; now: number }) {
+  const v = pct(row.window);
+  const t = tone(v, threshold);
+  const reset = countdown(resetsAtMs(row.window), now);
+  const title = `${row.label} (${row.hint}): ${v === null ? "no reading" : `${Math.round(v)}%`}${reset ? `, resets in ${reset}` : ""}`;
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 text-[10px] leading-none ink-3 tnum" title={title}>
+      <span className="font-medium">{row.short}</span>
+      <span className="w-8">
+        <UsageBar value={v} tone={t} size="sm" />
+      </span>
+      <span className={`font-semibold ${v === null ? "ink-3" : t === "ok" ? "ink-2" : toneText[t]}`}>
+        {v === null ? "–" : `${Math.round(v)}%`}
+      </span>
+    </span>
   );
 }
 

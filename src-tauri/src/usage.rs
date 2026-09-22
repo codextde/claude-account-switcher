@@ -189,5 +189,59 @@ mod tests {
         assert!(usage.five_hour.as_ref().unwrap().resets_at_ms().is_some());
         assert_eq!(usage.seven_day.as_ref().unwrap().utilization, Some(12.0));
         assert!(usage.seven_day_opus.is_none());
+        assert!(usage.model_windows().is_empty());
+    }
+
+    #[test]
+    fn scoped_limits_become_model_windows() {
+        let body = r#"{
+          "five_hour": {"utilization": 7, "resets_at": "2026-09-22T15:00:00Z"},
+          "seven_day": {"utilization": 32, "resets_at": "2026-09-27T10:00:00Z"},
+          "seven_day_opus": {"utilization": 12, "resets_at": "2026-09-27T10:00:00Z"},
+          "seven_day_sonnet": null,
+          "limits": [
+            {"kind": "five_hour", "percent": 7},
+            {"kind": "weekly_scoped", "percent": 60.4, "resets_at": "2026-09-27T10:00:00Z",
+             "is_active": true, "scope": {"model": {"id": "claude-fable-5-1", "display_name": "Fable"}}},
+            {"kind": "weekly_scoped", "percent": 99, "scope": {"model": {"display_name": "Opus 5"}}},
+            {"kind": "weekly_scoped", "percent": 40, "scope": {"model": {"display_name": "Sonnet"}}},
+            {"kind": "weekly_scoped", "percent": 1, "scope": {"model": {"display_name": "Fable 5"}}},
+            {"kind": "weekly_scoped", "percent": 5, "scope": {}},
+            {"kind": "weekly_scoped", "scope": {"model": {"display_name": "Haiku"}}}
+          ]
+        }"#;
+        let usage: Usage = serde_json::from_str(body).unwrap();
+        let models = usage.model_windows();
+        let labels: Vec<&str> = models.iter().map(|m| m.label.as_str()).collect();
+        assert_eq!(labels, ["Opus", "Sonnet", "Fable"]);
+        // The flat field wins over an inactive scoped bucket for the same family.
+        assert_eq!(models[0].window.utilization, Some(12.0));
+        assert_eq!(models[1].window.utilization, Some(40.0));
+        // The `is_active` bucket wins over a duplicate family ("Fable 5" is still Fable).
+        assert_eq!(models[2].window.utilization, Some(60.4));
+        assert!(models[2].window.resets_at_ms().is_some());
+        // Round-trips through the frontend snapshot as camelCase with the window flattened.
+        let json = serde_json::to_value(&models[2]).unwrap();
+        assert_eq!(json["label"], "Fable");
+        assert_eq!(json["utilization"], 60.4);
+        assert!(json["resetsAt"].is_string());
+    }
+
+    #[test]
+    fn active_scoped_bucket_replaces_stale_flat_field() {
+        let body = r#"{
+          "seven_day_opus": {"utilization": 0, "resets_at": null},
+          "limits": [
+            {"kind": "weekly_scoped", "percent": 80, "is_active": true,
+             "scope": {"model": {"display_name": "Opus"}}}
+          ]
+        }"#;
+        let usage: Usage = serde_json::from_str(body).unwrap();
+        let models = usage.model_windows();
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].window.utilization, Some(80.0));
+        // The raw list never reaches the frontend snapshot.
+        let json = serde_json::to_value(&usage).unwrap();
+        assert!(json.get("limits").is_none());
     }
 }

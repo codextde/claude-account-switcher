@@ -1,4 +1,4 @@
-import type { AccountView, Usage, UsageWindow } from "./types";
+import type { AccountView, ModelWindow, Usage, UsageWindow } from "./types";
 
 export const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -15,6 +15,34 @@ export function bindingPct(usage: Usage | null | undefined): number | null {
   if (a === null) return b;
   if (b === null) return a;
   return Math.max(a, b);
+}
+
+export interface LimitRow {
+  /** Short label for tight rows: "5h", "wk", "Fable". */
+  short: string;
+  /** Full label: "Session", "Weekly", "Fable". */
+  label: string;
+  hint: string;
+  window: UsageWindow | null;
+  /** Length of the window, for the elapsed-time marker. */
+  span: number;
+}
+
+/**
+ * Every limit worth showing for an account, in display order:
+ * the 5-hour and 7-day windows first, then each per-model weekly window.
+ * Model windows without a reading are dropped; the two base windows always appear.
+ */
+export function limitRows(usage: Usage | null | undefined, models: ModelWindow[] | undefined): LimitRow[] {
+  const rows: LimitRow[] = [
+    { short: "5h", label: "Session", hint: "5-hour window", window: usage?.fiveHour ?? null, span: FIVE_HOURS_MS },
+    { short: "wk", label: "Weekly", hint: "7-day window", window: usage?.sevenDay ?? null, span: SEVEN_DAYS_MS },
+  ];
+  for (const m of models ?? []) {
+    if (pct(m) === null) continue;
+    rows.push({ short: m.label, label: m.label, hint: "7-day model window", window: m, span: SEVEN_DAYS_MS });
+  }
+  return rows;
 }
 
 export function resetsAtMs(window: UsageWindow | null | undefined): number | null {

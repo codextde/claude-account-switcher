@@ -134,6 +134,44 @@ pub struct ExtraUsage {
     pub utilization: Option<f64>,
 }
 
+/// The model a scoped limit applies to.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LimitModel {
+    pub id: Option<String>,
+    #[serde(alias = "display_name")]
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LimitScope {
+    pub model: Option<LimitModel>,
+}
+
+/// One entry of the newer `limits[]` list. Only `weekly_scoped` entries carry a model.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopedLimit {
+    pub kind: Option<String>,
+    /// Percent, 0-100.
+    pub percent: Option<f64>,
+    #[serde(alias = "resets_at")]
+    pub resets_at: Option<String>,
+    #[serde(alias = "is_active", default)]
+    pub is_active: bool,
+    pub scope: Option<LimitScope>,
+}
+
+/// A per-model weekly window with its display label ("Opus", "Sonnet", "Fable", ...).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelWindow {
+    pub label: String,
+    #[serde(flatten)]
+    pub window: UsageWindow,
+}
+
 /// Parsed `/api/oauth/usage` response. Unknown windows are ignored.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
@@ -148,6 +186,83 @@ pub struct Usage {
     pub seven_day_sonnet: Option<UsageWindow>,
     #[serde(alias = "extra_usage")]
     pub extra_usage: Option<ExtraUsage>,
+    /// Per-model weekly buckets. Newer tiers such as Fable only appear here.
+    /// Not sent to the frontend: it reads the derived `model_windows` instead.
+    #[serde(default, skip_serializing)]
+    pub limits: Vec<ScopedLimit>,
+}
+
+impl Usage {
+    /// Every per-model weekly window with a reading, deduplicated by model family.
+    ///
+    /// Windows are keyed by model family: "Opus" and "Sonnet" by substring, anything else by
+    /// the first word of its display name ("Fable 5" and "Fable" are one family). The first
+    /// reading for a family wins, whether it came from the flat `seven_day_*` fields or from
+    /// `limits[]`, except that a `limits[]` entry flagged `is_active` replaces any reading
+    /// that was not itself flagged. Order: Opus, Sonnet, then the rest as the API listed them.
+    pub fn model_windows(&self) -> Vec<ModelWindow> {
+        let mut out: Vec<ModelWindow> = Vec::new();
+        for (label, window) in [("Opus", &self.seven_day_opus), ("Sonnet", &self.seven_day_sonnet)] {
+            if let Some(w) = window.as_ref().filter(|w| w.utilization.is_some()) {
+                out.push(ModelWindow {
+                    label: label.to_string(),
+                    window: w.clone(),
+                });
+            }
+        }
+        // Whether each entry in `out` came from an `is_active` bucket. The flat fields are
+        // legacy and may go stale, so an active scoped bucket is allowed to replace them.
+        let mut scoped_active: Vec<bool> = out.iter().map(|_| false).collect();
+        for entry in &self.limits {
+            if entry.kind.as_deref() != Some("weekly_scoped") {
+                continue;
+            }
+            let Some(percent) = entry.percent.filter(|p| p.is_finite()) else {
+                continue;
+            };
+            let Some(name) = entry
+                .scope
+                .as_ref()
+                .and_then(|s| s.model.as_ref())
+                .and_then(|m| m.display_name.as_deref())
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+            else {
+                continue;
+            };
+            let lower = name.to_lowercase();
+            let label = if lower.contains("opus") {
+                "Opus".to_string()
+            } else if lower.contains("sonnet") {
+                "Sonnet".to_string()
+            } else {
+                name.split_whitespace().next().unwrap_or(name).to_string()
+            };
+            let window = UsageWindow {
+                utilization: Some(percent.clamp(0.0, 100.0)),
+                resets_at: entry.resets_at.clone(),
+            };
+            match out.iter().position(|m| m.label.eq_ignore_ascii_case(&label)) {
+                Some(i) => {
+                    if entry.is_active && !scoped_active[i] {
+                        out[i].window = window;
+                        scoped_active[i] = true;
+                    }
+                }
+                None => {
+                    out.push(ModelWindow { label, window });
+                    scoped_active.push(entry.is_active);
+                }
+            }
+        }
+        let rank = |m: &ModelWindow| match m.label.as_str() {
+            "Opus" => 0,
+            "Sonnet" => 1,
+            _ => 2,
+        };
+        out.sort_by_key(rank);
+        out
+    }
 }
 
 /// Latest usage sample for one account, plus fetch bookkeeping.
@@ -222,6 +337,8 @@ pub struct AccountView {
     pub has_backup: bool,
     pub needs_reauth: bool,
     pub usage: Option<Usage>,
+    /// Per-model weekly windows derived from `usage`, ready to render.
+    pub model_windows: Vec<ModelWindow>,
     pub usage_error: Option<String>,
     pub usage_fetched_at: Option<i64>,
     pub token_expires_at: Option<i64>,
