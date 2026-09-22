@@ -24,7 +24,7 @@ pub fn build(app: &AppHandle, service: Arc<Service>) -> tauri::Result<()> {
     let menu = build_menu(app, &service.snapshot())?;
     let svc_menu = service.clone();
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
-        .icon(render_icon(None, Level::Normal))
+        .icon(render_icon(None, Level::Normal).0)
         .tooltip("Claude Account Switcher")
         .menu(&menu)
         .show_menu_on_left_click(cfg!(target_os = "linux"))
@@ -141,11 +141,17 @@ pub fn update(app: &AppHandle, snap: &Snapshot) {
     let show_bar = snap.settings.tray_mode != TrayMode::Percent || !cfg!(target_os = "macos");
     let show_text = cfg!(target_os = "macos") && snap.settings.tray_mode != TrayMode::Bar;
 
-    let _ = tray.set_icon(Some(if show_bar {
+    let (icon, template) = if show_bar {
         render_icon(pct, level)
     } else {
-        render_dot_icon()
-    }));
+        (render_dot_icon(), true)
+    };
+    // Warn/critical use real colours, which a template image would flatten to monochrome.
+    // The flag must be set before the icon so tray-icon applies it to the new image.
+    if cfg!(target_os = "macos") {
+        let _ = tray.set_icon_as_template(template);
+    }
+    let _ = tray.set_icon(Some(icon));
     if cfg!(target_os = "macos") {
         let title = match (show_text, pct) {
             (true, Some(p)) => Some(format!("{p:.0}%")),
@@ -380,10 +386,22 @@ impl Canvas {
     }
 }
 
-fn ink(level: Level) -> ([u8; 4], [u8; 4]) {
+/// Ink for the bar: `(outline, fill, is_template)`.
+///
+/// On macOS the normal state is a template image (only alpha matters, macOS tints it for
+/// light/dark menu bars) with a half-transparent outline, mirroring CCSwitcher's strip.
+/// Warn/critical need real colour, so they are rendered as plain images with a mid-grey
+/// outline that reads on both light and dark menu bars.
+fn ink(pct: Option<f64>, level: Level) -> ([u8; 4], [u8; 4], bool) {
     if cfg!(target_os = "macos") {
-        // Template image: only alpha matters, macOS tints it for light/dark menu bars.
-        return ([0, 0, 0, 255], [0, 0, 0, 255]);
+        return match level {
+            Level::Normal => {
+                let outline_a = if pct.is_some() { 140 } else { 64 };
+                ([0, 0, 0, outline_a], [0, 0, 0, 255], true)
+            }
+            Level::Warn => ([135, 135, 135, 255], [245, 158, 11, 255], false),
+            Level::Critical => ([135, 135, 135, 255], [239, 68, 68, 255], false),
+        };
     }
     let outline = [225, 225, 225, 255];
     let fill = match level {
@@ -391,65 +409,92 @@ fn ink(level: Level) -> ([u8; 4], [u8; 4]) {
         Level::Warn => [245, 158, 11, 255],
         Level::Critical => [239, 68, 68, 255],
     };
-    (outline, fill)
+    (outline, fill, false)
+}
+
+/// Bar geometry in pixels: canvas size, bar rectangle, stroke and inner inset.
+struct BarGeometry {
+    w: u32,
+    h: u32,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    stroke: f32,
+    inset: f32,
+}
+
+fn bar_geometry() -> BarGeometry {
+    if cfg!(target_os = "macos") {
+        // tray-icon scales every image to 18pt high, so a 64x36 canvas is a 32x18pt @2x
+        // image holding a 26x8pt capsule with a 1pt stroke and a 1.5pt inset (CCSwitcher).
+        BarGeometry {
+            w: 64,
+            h: 36,
+            x0: 6.0,
+            y0: 10.0,
+            x1: 58.0,
+            y1: 26.0,
+            stroke: 2.0,
+            inset: 3.0,
+        }
+    } else {
+        BarGeometry {
+            w: 32,
+            h: 32,
+            x0: 1.0,
+            y0: 9.0,
+            x1: 31.0,
+            y1: 23.0,
+            stroke: 2.0,
+            inset: 3.5,
+        }
+    }
 }
 
 /// A horizontal progress bar. Wide on macOS (menu bar), square elsewhere.
-pub fn render_icon(pct: Option<f64>, level: Level) -> Image<'static> {
-    let (w, h, bar_h) = if cfg!(target_os = "macos") {
-        (64u32, 32u32, 20.0f32)
-    } else {
-        (32u32, 32u32, 14.0f32)
-    };
-    let mut c = Canvas::new(w, h);
-    let (outline, fill) = ink(level);
-    let stroke = if w > 32 { 3.0 } else { 2.0 };
-    let margin = if w > 32 { 2.0 } else { 1.0 };
-    let y0 = (h as f32 - bar_h) / 2.0;
-    let y1 = y0 + bar_h;
-    let x0 = margin;
-    let x1 = w as f32 - margin;
-    let radius = bar_h / 2.0;
+/// Returns the image and whether it should be shown as a macOS template image.
+pub fn render_icon(pct: Option<f64>, level: Level) -> (Image<'static>, bool) {
+    let g = bar_geometry();
+    let mut c = Canvas::new(g.w, g.h);
+    let (outline, fill, template) = ink(pct, level);
+    let radius = (g.y1 - g.y0) / 2.0;
 
-    // Outline: outer shape minus inner shape (drawn by punching alpha 0 is not possible
-    // with "over", so draw outer in ink and inner as fully transparent by rebuilding).
-    c.rounded_rect(x0, y0, x1, y1, radius, outline);
-    let mut hole = Canvas::new(w, h);
+    // Outline: outer capsule with the inner capsule punched out of its alpha.
+    c.rounded_rect(g.x0, g.y0, g.x1, g.y1, radius, outline);
+    let mut hole = Canvas::new(g.w, g.h);
     hole.rounded_rect(
-        x0 + stroke,
-        y0 + stroke,
-        x1 - stroke,
-        y1 - stroke,
-        radius - stroke,
+        g.x0 + g.stroke,
+        g.y0 + g.stroke,
+        g.x1 - g.stroke,
+        g.y1 - g.stroke,
+        radius - g.stroke,
         [0, 0, 0, 255],
     );
-    for i in 0..(w * h) as usize {
+    for i in 0..(g.w * g.h) as usize {
         let cut = hole.px[i * 4 + 3] as u32;
         let a = c.px[i * 4 + 3] as u32;
         c.px[i * 4 + 3] = (a * (255 - cut) / 255) as u8;
     }
 
+    // Fill: an inset capsule scaled to the percentage. Omitted when there is no data so
+    // "unknown" (faint outline) is visually distinct from 0%.
     if let Some(p) = pct {
         let p = (p / 100.0).clamp(0.0, 1.0) as f32;
-        let gap = stroke + if w > 32 { 2.5 } else { 1.5 };
-        let inner_w = (x1 - x0) - 2.0 * gap;
-        let fill_w = if p > 0.0 { (inner_w * p).max(gap * 1.2) } else { 0.0 };
-        let fy0 = y0 + gap;
-        let fy1 = y1 - gap;
-        c.rounded_rect(x0 + gap, fy0, x0 + gap + fill_w, fy1, (fy1 - fy0) / 2.0, fill);
-    } else {
-        // Unknown: a small centred dash so the icon does not look broken.
-        let cx = (x0 + x1) / 2.0;
-        let cy = (y0 + y1) / 2.0;
-        c.rounded_rect(cx - 5.0, cy - 1.5, cx + 5.0, cy + 1.5, 1.5, fill);
+        let fy0 = g.y0 + g.inset;
+        let fy1 = g.y1 - g.inset;
+        let inner_w = (g.x1 - g.x0) - 2.0 * g.inset;
+        let min_w = fy1 - fy0;
+        let fill_w = if p > 0.0 { (inner_w * p).max(min_w) } else { 0.0 };
+        c.rounded_rect(g.x0 + g.inset, fy0, g.x0 + g.inset + fill_w, fy1, min_w / 2.0, fill);
     }
-    c.into_image()
+    (c.into_image(), template)
 }
 
 fn render_dot_icon() -> Image<'static> {
-    let size = 32u32;
+    let size = if cfg!(target_os = "macos") { 36u32 } else { 32u32 };
     let mut c = Canvas::new(size, size);
-    let (outline, _) = ink(Level::Normal);
+    let (outline, _, _) = ink(Some(0.0), Level::Normal);
     let m = size as f32 * 0.22;
     c.rounded_rect(
         m,
@@ -468,9 +513,20 @@ mod tests {
 
     #[test]
     fn renders_sane_dimensions() {
-        let img = render_icon(Some(42.0), Level::Normal);
+        let (img, _) = render_icon(Some(42.0), Level::Normal);
         assert_eq!(img.rgba().len(), (img.width() * img.height() * 4) as usize);
         assert!(img.rgba().iter().skip(3).step_by(4).any(|&a| a > 0));
+    }
+
+    /// Fill coverage must grow with the percentage and vanish when unknown.
+    #[test]
+    fn fill_scales_with_percent() {
+        let opaque = |img: &Image<'_>| img.rgba().iter().skip(3).step_by(4).filter(|&&a| a == 255).count();
+        let none = opaque(&render_icon(None, Level::Normal).0);
+        let low = opaque(&render_icon(Some(20.0), Level::Normal).0);
+        let high = opaque(&render_icon(Some(80.0), Level::Normal).0);
+        assert!(none < low, "unknown must not draw a fill ({none} >= {low})");
+        assert!(low < high, "fill must grow with percent ({low} >= {high})");
     }
 
     /// `CAS_DUMP_ICON=/path/prefix cargo test dump_icon` writes raw RGBA renders for eyeballing.
@@ -481,11 +537,12 @@ mod tests {
         };
         for (name, pct, level) in [
             ("none", None, Level::Normal),
+            ("p0", Some(0.0), Level::Normal),
             ("p20", Some(20.0), Level::Normal),
             ("p63", Some(63.0), Level::Warn),
             ("p95", Some(95.0), Level::Critical),
         ] {
-            let img = render_icon(pct, level);
+            let (img, _) = render_icon(pct, level);
             let path = format!("{prefix}-{name}-{}x{}.rgba", img.width(), img.height());
             std::fs::write(path, img.rgba()).unwrap();
         }
