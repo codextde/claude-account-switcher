@@ -33,18 +33,15 @@
 
 <table align="center">
   <tr>
-    <td align="center" valign="top">
+    <td align="center" valign="top" width="50%">
       <img src="docs/screenshots/tray-dark.png" width="400" alt="The menu bar item at 20%, 63% and 95%: a small bar that turns amber near the threshold and red above it">
       <br><em>Menu bar item as usage climbs</em>
-    </td>
-    <td align="center" valign="top">
+      <br><br>
       <img src="docs/screenshots/popover-hover-dark.png" width="400" alt="Hovering an account row reveals re-authenticate, remove and switch actions">
       <br><em>Hover a row to switch, re-login or remove</em>
     </td>
-  </tr>
-  <tr>
-    <td align="center" valign="top" colspan="2">
-      <img src="docs/screenshots/settings-dark.png" width="520" alt="Settings window: auto-switch threshold, hysteresis and cooldown, menu bar display options, launch at login, automatic updates and the CLI path">
+    <td align="center" valign="top" width="50%">
+      <img src="docs/screenshots/settings-dark.png" width="400" alt="Settings window: auto-switch threshold, hysteresis and cooldown, menu bar display options, launch at login, automatic updates and the CLI path">
       <br><em>Settings: thresholds, menu bar display, updates and the CLI path</em>
     </td>
   </tr>

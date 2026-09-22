@@ -176,11 +176,9 @@ pub fn update(app: &AppHandle, snap: &Snapshot) {
         (render_dot_icon(), true)
     };
     // Warn/critical use real colours, which a template image would flatten to monochrome.
-    // The flag must be set before the icon so tray-icon applies it to the new image.
-    if cfg!(target_os = "macos") {
-        let _ = tray.set_icon_as_template(template);
-    }
-    let _ = tray.set_icon(Some(icon));
+    // Image and template flag must go in one call: tray-icon's plain `set_icon` re-applies
+    // the image with template=false, which turns the capsule solid black on macOS.
+    let _ = tray.set_icon_with_as_template(Some(icon), template);
     if cfg!(target_os = "macos") {
         let title = match (show_text, pct) {
             (true, Some(p)) => Some(format!("{p:.0}%")),
