@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Check, ExternalLink, RefreshCw, Search } from "lucide-react";
+import { Check, Download, ExternalLink, RefreshCw, Search } from "lucide-react";
 import { api, errorMessage } from "../lib/api";
-import type { Settings as SettingsModel, Snapshot, TrayMode, TrayWindow } from "../lib/types";
+import { relativeTime } from "../lib/format";
+import type { Settings as SettingsModel, Snapshot, TrayMode, TrayWindow, UpdateInfo } from "../lib/types";
 import { Segmented, Spinner, Toggle } from "./ui";
 
 const REPO_URL = "https://github.com/codextde/claude-account-switcher";
@@ -163,6 +164,10 @@ export default function Settings({ snapshot }: { snapshot: Snapshot | null }) {
         <Row label="Launch at login">
           <Toggle checked={draft.launchAtLogin} onChange={(v) => patch({ launchAtLogin: v })} label="Launch at login" />
         </Row>
+        <Row label="Install updates automatically" hint="New releases download in the background and install when the app is idle.">
+          <Toggle checked={draft.autoUpdate} onChange={(v) => patch({ autoUpdate: v })} label="Install updates automatically" />
+        </Row>
+        <UpdateRow update={snapshot.update} />
         <div className="flex flex-col gap-1.5 py-2">
           <div className="flex items-center justify-between">
             <span className="text-[13px] font-medium">Claude Code CLI</span>
@@ -222,6 +227,70 @@ export default function Settings({ snapshot }: { snapshot: Snapshot | null }) {
           Not affiliated with Anthropic.
         </p>
       </Section>
+    </div>
+  );
+}
+
+function UpdateRow({ update }: { update: UpdateInfo }) {
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<"current" | null>(null);
+  const busy = update.stage === "checking" || update.stage === "downloading" || update.stage === "installing";
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setError(null);
+    setResult(null);
+    try {
+      const version = await fn();
+      if (version === null) setResult("current");
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+
+  let status: string;
+  switch (update.stage) {
+    case "checking":
+      status = "Checking for updates…";
+      break;
+    case "downloading":
+      status = `Downloading ${update.version}…`;
+      break;
+    case "ready":
+      status = `${update.version} is downloaded and installs when the app is idle.`;
+      break;
+    case "installing":
+      status = `Installing ${update.version}…`;
+      break;
+    default:
+      status =
+        error ?? update.error ?? (result === "current" ? "You have the latest version." : update.lastCheckedAt ? `Last checked ${relativeTime(update.lastCheckedAt, Date.now())}.` : "Not checked yet.");
+  }
+  const tone = error || (update.stage === "idle" && update.error) ? "text-critical" : update.stage === "ready" ? "text-ok" : "ink-3";
+
+  return (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <div className="min-w-0">
+        <div className="text-[13px] font-medium">Updates</div>
+        <div className={`text-[11px] ${tone}`}>{status}</div>
+      </div>
+      {update.stage === "ready" ? (
+        <button
+          type="button"
+          onClick={() => run(() => api.installUpdate())}
+          className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:opacity-90"
+        >
+          <Download size={13} /> Restart to update
+        </button>
+      ) : (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => run(() => api.checkForUpdates())}
+          className="focus-ring panel inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-medium ink-2 hover:panel-hover hover:ink disabled:opacity-50"
+        >
+          {busy ? <Spinner className="h-3 w-3" /> : <RefreshCw size={13} />} Check now
+        </button>
+      )}
     </div>
   );
 }

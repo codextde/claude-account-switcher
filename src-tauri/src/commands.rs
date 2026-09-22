@@ -7,8 +7,10 @@ use crate::error::Result;
 use crate::models::{Settings, Snapshot};
 use crate::service::{Service, SwitchReason};
 use crate::tray;
+use crate::updater::{Outcome, Updater};
 
 type Svc<'a> = State<'a, Arc<Service>>;
+type Upd<'a> = State<'a, Arc<Updater>>;
 
 #[tauri::command]
 pub fn get_snapshot(service: Svc<'_>) -> Snapshot {
@@ -80,4 +82,20 @@ pub fn hide_popover(app: AppHandle) {
 #[tauri::command]
 pub fn quit_app(app: AppHandle) {
     app.exit(0);
+}
+
+/// Checks for a newer release and downloads it. Returns the version now waiting to be
+/// installed, or `None` when this build is current. Progress arrives via the snapshot.
+#[tauri::command]
+pub async fn check_for_updates(updater: Upd<'_>) -> Result<Option<String>> {
+    Ok(match updater.check().await? {
+        Outcome::UpToDate => None,
+        Outcome::Downloaded(version) => Some(version),
+    })
+}
+
+/// Installs the downloaded release and restarts. Only returns on failure.
+#[tauri::command]
+pub async fn install_update(updater: Upd<'_>) -> Result<()> {
+    updater.install_pending().await
 }

@@ -18,6 +18,10 @@ export const api = {
   hidePopover: () => invoke<void>("hide_popover"),
   resizePopover: (height: number) => invoke<void>("resize_popover", { height }),
   quit: () => invoke<void>("quit_app"),
+  /** Resolves with the downloaded version, or null when already current. */
+  checkForUpdates: () => invoke<string | null>("check_for_updates"),
+  /** Installs the downloaded update and restarts the app. */
+  installUpdate: () => invoke<void>("install_update"),
 };
 
 /** Live view of backend state: fetched once, then updated by the `snapshot` event. */

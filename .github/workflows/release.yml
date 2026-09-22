@@ -2,6 +2,10 @@ name: Release
 
 # Pushing a tag like v1.0.0 builds installers for macOS (Apple Silicon + Intel),
 # Linux (deb, rpm, AppImage) and Windows (msi, nsis) and publishes a GitHub release.
+#
+# With TAURI_SIGNING_PRIVATE_KEY set, every build also produces a signed updater bundle
+# and the release gets a latest.json manifest. Installed apps poll that manifest and
+# update themselves in the background (src-tauri/src/updater.rs).
 
 on:
   push:
@@ -91,6 +95,10 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater signing key (generated with `pnpm tauri signer generate`). Without it
+          # the release has no latest.json and installed apps cannot self-update.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Optional macOS code signing + notarization. Unsigned builds still work;
           # users right-click > Open on first launch.
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -108,6 +116,8 @@ jobs:
             - **macOS**: `.dmg` (Apple Silicon: `aarch64`, Intel: `x64`). Unsigned builds need a right-click → Open on first launch.
             - **Linux**: `.AppImage`, `.deb` or `.rpm`.
             - **Windows**: `.msi` or `-setup.exe`.
+
+            Installed copies update themselves to this release automatically.
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}

@@ -9,6 +9,7 @@ export interface Settings {
   switchCooldownSecs: number;
   launchAtLogin: boolean;
   notifications: boolean;
+  autoUpdate: boolean;
   trayMode: TrayMode;
   trayWindow: TrayWindow;
   cliPath: string | null;
@@ -69,6 +70,15 @@ export interface ActivityEvent {
   at: number;
 }
 
+export type UpdateStage = "idle" | "checking" | "downloading" | "ready" | "installing";
+
+export interface UpdateInfo {
+  stage: UpdateStage;
+  version: string | null;
+  lastCheckedAt: number | null;
+  error: string | null;
+}
+
 export interface Snapshot {
   accounts: AccountView[];
   activeId: string | null;
@@ -79,6 +89,7 @@ export interface Snapshot {
   lastRefreshAt: number | null;
   login: LoginState;
   lastEvent: ActivityEvent | null;
+  update: UpdateInfo;
   platform: string;
   version: string;
 }

@@ -65,6 +65,8 @@ pub struct Settings {
     pub switch_cooldown_secs: u64,
     pub launch_at_login: bool,
     pub notifications: bool,
+    /// Download new releases in the background and install them when the app is idle.
+    pub auto_update: bool,
     pub tray_mode: TrayMode,
     pub tray_window: TrayWindow,
     /// Optional explicit path to the `claude` executable.
@@ -81,6 +83,7 @@ impl Default for Settings {
             switch_cooldown_secs: 600,
             launch_at_login: false,
             notifications: true,
+            auto_update: true,
             tray_mode: TrayMode::Both,
             tray_window: TrayWindow::Max,
             cli_path: None,
@@ -183,6 +186,33 @@ pub struct ActivityEvent {
     pub at: i64,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum UpdateStage {
+    /// Nothing pending. `version` is `None`.
+    #[default]
+    Idle,
+    /// Fetching the release manifest.
+    Checking,
+    /// A newer build is being downloaded and verified.
+    Downloading,
+    /// A verified build is on disk and installs on the next idle moment or on request.
+    Ready,
+    /// The build is being written in place; the app restarts right after.
+    Installing,
+}
+
+/// Auto-update progress, shown in the tray menu and the settings window.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    pub stage: UpdateStage,
+    /// Version of the pending update, once one is known.
+    pub version: Option<String>,
+    pub last_checked_at: Option<i64>,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountView {
@@ -211,6 +241,7 @@ pub struct Snapshot {
     pub last_refresh_at: Option<i64>,
     pub login: LoginState,
     pub last_event: Option<ActivityEvent>,
+    pub update: UpdateInfo,
     pub platform: &'static str,
     pub version: &'static str,
 }

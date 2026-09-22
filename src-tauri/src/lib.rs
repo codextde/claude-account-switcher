@@ -7,6 +7,7 @@ mod models;
 mod service;
 mod store;
 mod tray;
+mod updater;
 mod usage;
 
 use std::time::Duration;
@@ -36,6 +37,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
@@ -48,7 +50,10 @@ pub fn run() {
             let service = Service::new(app.handle().clone(), data_dir);
             app.manage(service.clone());
 
-            tray::build(app.handle(), service.clone())?;
+            let updater = updater::Updater::new(app.handle().clone(), service.clone());
+            app.manage(updater.clone());
+
+            tray::build(app.handle(), service.clone(), updater.clone())?;
 
             if let Some(window) = app.get_webview_window(tray::POPOVER) {
                 apply_window_effects(&window);
@@ -70,6 +75,10 @@ pub fn run() {
                     svc.refresh_all().await;
                 }
             });
+
+            // Background updater: fetch the release manifest now and then, download a
+            // newer build, install it when nobody is looking.
+            updater.spawn_loop();
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -98,6 +107,8 @@ pub fn run() {
             commands::hide_popover,
             commands::resize_popover,
             commands::quit_app,
+            commands::check_for_updates,
+            commands::install_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

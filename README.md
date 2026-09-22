@@ -29,6 +29,7 @@
 - **Delegated token refresh.** The active account is refreshed through the CLI itself. Other accounts refresh through the OAuth endpoint, touching only the app's own backup.
 - **Cross-platform.** macOS keychain, or `~/.claude/.credentials.json` on Linux and Windows. `CLAUDE_CONFIG_DIR` is honoured.
 - **Native feel.** Vibrancy on macOS, Mica or acrylic on Windows, light and dark mode, launch at login, notifications on auto-switch.
+- **Self-updating.** New releases are downloaded and signature-checked in the background, then installed the next time the app is idle. Can be turned off in Settings; "Check for updates…" lives in the tray menu.
 
 ## Install
 
@@ -48,6 +49,15 @@ xattr -dr com.apple.quarantine "/Applications/Claude Account Switcher.app"
 ```
 
 Requirements: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and available as `claude`. The app searches the usual install locations; you can set an explicit path in Settings.
+
+## Updates
+
+The app checks the latest GitHub release shortly after launch and every six hours. When a newer version exists, it downloads the build, verifies its signature against the public key baked into the app, and installs it once nothing is going on: popover and settings closed, no login or switch in flight. macOS and Linux relaunch the app; on Windows the installer runs in passive mode and starts the app again.
+
+- Turn it off with **Install updates automatically** in Settings. Manual checks still work from the tray menu and the settings window.
+- A downloaded update waits until you close the popover, or you can install it right away with **Restart to update** in the tray menu.
+- Linux `.deb` and `.rpm` installs need a privilege prompt to update, so those packages only update on request. AppImage updates in place.
+- Debug builds (`pnpm tauri dev`) never auto-update.
 
 ## How it works
 
@@ -100,6 +110,7 @@ src-tauri/src/
   engine.rs          pure auto-switch decision logic
   service.rs         orchestration: polling, switching, login flows
   tray.rs            tray icon rendering, menu, popover window
+  updater.rs         background check / download / idle install of new releases
 ```
 
 ## Releasing
@@ -111,7 +122,23 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
+The tag must match the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `package.json`; the updater compares that version against the manifest.
+
 Set `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID` as repository secrets to get signed and notarized macOS builds. Without them the workflow still produces unsigned builds.
+
+### Updater signing
+
+Update bundles are signed with a minisign key. The public half is in `tauri.conf.json` under `plugins.updater.pubkey`; the private half must be available to the release workflow as the `TAURI_SIGNING_PRIVATE_KEY` secret (file contents) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Releases built without the key ship no `latest.json`, and installed apps will not see them.
+
+Keep the private key backed up. Rotating it means every existing install has to be updated by hand once, because it only trusts the key it was built with. To create a new pair:
+
+```bash
+pnpm tauri signer generate -w ~/.tauri/claude-account-switcher.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/claude-account-switcher.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --body "<password>"
+```
+
+Then paste the contents of `claude-account-switcher.key.pub` into `plugins.updater.pubkey`.
 
 ## Acknowledgements
 

@@ -38,7 +38,7 @@ export default function UsageBar({
       />
       {typeof elapsed === "number" && size !== "sm" && (
         <div
-          className="absolute inset-y-0 w-px bg-[rgb(var(--ink)/0.45)]"
+          className="absolute inset-y-0 w-px bg-[rgb(var(--ink)/0.35)]"
           style={{ left: `${elapsed}%` }}
           title="Time elapsed in this window"
         />

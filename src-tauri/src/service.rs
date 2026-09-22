@@ -36,6 +36,7 @@ pub struct AppState {
     pub last_event: Option<ActivityEvent>,
     pub last_auto_switch_at: Option<i64>,
     pub unknown_active_email: Option<String>,
+    pub update: UpdateInfo,
 }
 
 pub struct Service {
@@ -76,6 +77,7 @@ impl Service {
                 login: LoginState::default(),
                 last_refresh_at: None,
                 last_event: None,
+                update: UpdateInfo::default(),
                 last_auto_switch_at: None,
                 unknown_active_email: None,
             }),
@@ -130,6 +132,7 @@ impl Service {
             last_refresh_at: s.last_refresh_at,
             login: s.login.clone(),
             last_event: s.last_event.clone(),
+            update: s.update.clone(),
             platform: std::env::consts::OS,
             version: env!("CARGO_PKG_VERSION"),
         }
@@ -142,7 +145,7 @@ impl Service {
         tray::update(&self.app, &snap);
     }
 
-    fn set_event(&self, kind: &str, message: impl Into<String>) {
+    pub(crate) fn set_event(&self, kind: &str, message: impl Into<String>) {
         let message = message.into();
         log::info!("[{kind}] {message}");
         self.state().last_event = Some(ActivityEvent {
@@ -156,7 +159,32 @@ impl Service {
         if !self.settings().notifications {
             return;
         }
+        self.notify_always(title, body);
+    }
+
+    /// A notification the user asked for directly, shown regardless of the setting.
+    pub(crate) fn notify_always(&self, title: &str, body: &str) {
         let _ = self.app.notification().builder().title(title).body(body).show();
+    }
+
+    // ------------------------------------------------------------------
+    // Auto-update bookkeeping
+    // ------------------------------------------------------------------
+
+    /// Mutates the update state and pushes it to the UI.
+    pub fn set_update_info(&self, f: impl FnOnce(&mut UpdateInfo)) {
+        f(&mut self.state().update);
+        self.publish();
+    }
+
+    /// True while a login, switch or refresh holds the CLI's credential storage.
+    /// Installing an update restarts the app, so it must wait for this to clear.
+    pub fn is_busy(&self) -> bool {
+        if self.op.try_lock().is_err() {
+            return true;
+        }
+        let s = self.state();
+        s.login.in_progress || s.refreshing
     }
 
     fn save(&self) {

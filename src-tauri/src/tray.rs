@@ -9,8 +9,9 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use uuid::Uuid;
 
-use crate::models::{now_ms, Snapshot, TrayMode, TrayWindow};
+use crate::models::{now_ms, Snapshot, TrayMode, TrayWindow, UpdateStage};
 use crate::service::{Service, SwitchReason};
+use crate::updater::{self, Updater};
 
 pub const TRAY_ID: &str = "main";
 pub const POPOVER: &str = "main";
@@ -20,7 +21,7 @@ pub const SETTINGS: &str = "settings";
 /// the same click that took the focus away: it must not reopen the window.
 static LAST_BLUR_HIDE: AtomicI64 = AtomicI64::new(0);
 
-pub fn build(app: &AppHandle, service: Arc<Service>) -> tauri::Result<()> {
+pub fn build(app: &AppHandle, service: Arc<Service>, updater: Arc<Updater>) -> tauri::Result<()> {
     let menu = build_menu(app, &service.snapshot())?;
     let svc_menu = service.clone();
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
@@ -28,7 +29,7 @@ pub fn build(app: &AppHandle, service: Arc<Service>) -> tauri::Result<()> {
         .tooltip("Claude Account Switcher")
         .menu(&menu)
         .show_menu_on_left_click(cfg!(target_os = "linux"))
-        .on_menu_event(move |app, event| handle_menu(app, &svc_menu, event.id().as_ref()))
+        .on_menu_event(move |app, event| handle_menu(app, &svc_menu, &updater, event.id().as_ref()))
         .on_tray_icon_event(|tray, event| {
             tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
             if let TrayIconEvent::Click {
@@ -49,7 +50,7 @@ pub fn build(app: &AppHandle, service: Arc<Service>) -> tauri::Result<()> {
     Ok(())
 }
 
-fn handle_menu(app: &AppHandle, service: &Arc<Service>, id: &str) {
+fn handle_menu(app: &AppHandle, service: &Arc<Service>, updater: &Arc<Updater>, id: &str) {
     match id {
         "open" => show_popover(app),
         "settings" => open_settings(app),
@@ -63,6 +64,20 @@ fn handle_menu(app: &AppHandle, service: &Arc<Service>, id: &str) {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = svc.add_account().await {
                     log::warn!("add account failed: {e}");
+                }
+            });
+        }
+        "update:check" => {
+            let upd = updater.clone();
+            let svc = service.clone();
+            tauri::async_runtime::spawn(async move { updater::check_and_install_now(&upd, &svc).await });
+        }
+        "update:install" => {
+            let upd = updater.clone();
+            let svc = service.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = upd.install_pending().await {
+                    svc.notify_always("Update failed", &e.to_string());
                 }
             });
         }
@@ -127,6 +142,20 @@ fn build_menu(app: &AppHandle, snap: &Snapshot) -> tauri::Result<Menu<tauri::Wry
     )?)?;
     menu.append(&MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
+    let (update_id, update_label, update_enabled) = match (snap.update.stage, &snap.update.version) {
+        (UpdateStage::Ready, Some(v)) => ("update:install", format!("Restart to update to {v}"), true),
+        (UpdateStage::Installing, Some(v)) => ("update:install", format!("Installing {v}…"), false),
+        (UpdateStage::Checking, _) => ("update:check", "Checking for updates…".to_string(), false),
+        (UpdateStage::Downloading, Some(v)) => ("update:check", format!("Downloading {v}…"), false),
+        _ => ("update:check", "Check for updates…".to_string(), true),
+    };
+    menu.append(&MenuItem::with_id(
+        app,
+        update_id,
+        update_label,
+        update_enabled,
+        None::<&str>,
+    )?)?;
     menu.append(&MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?)?;
     Ok(menu)
 }
